@@ -25,13 +25,27 @@
 // address changes every time it restarts. start_tunnel.sh writes the current
 // one to tunnel.json in this repo; this page reads it through the GitHub API
 // (never cached) and forwards. If the tunnel is down, say so instead of 404ing.
+// Two ways to read the pointer: the API (never cached, but 60 anonymous
+// requests an hour per address), then the raw file (no limit, cached up to
+// five minutes) when the API is rate-limited or down.
+async function readPointer() {
+  try {
+    const r = await fetch("https://api.github.com/repos/benrathi/yoda/contents/tunnel.json", { headers: { Accept: "application/vnd.github+json" }, cache: "no-store" });
+    if (r.ok) {
+      const j = await r.json();
+      return JSON.parse(atob(j.content.replace(/\n/g, "")));
+    }
+  } catch (e) {
+    /* fall through */
+  }
+  const r = await fetch("https://raw.githubusercontent.com/benrathi/yoda/main/tunnel.json?t=" + Date.now(), { cache: "no-store" });
+  if (!r.ok) throw new Error("raw " + r.status);
+  return r.json();
+}
 (async () => {
   const msg = document.getElementById("msg");
   try {
-    const r = await fetch("https://api.github.com/repos/benrathi/yoda/contents/tunnel.json", { headers: { Accept: "application/vnd.github+json" }, cache: "no-store" });
-    if (!r.ok) throw new Error("GitHub API " + r.status);
-    const j = await r.json();
-    const t = JSON.parse(atob(j.content.replace(/\n/g, "")));
+    const t = await readPointer();
     if (t.url) {
       const target = t.url.replace(/\/$/, "") + (location.search || "");
       msg.innerHTML = 'Opening <a href="' + target + '">' + target.replace(/^https:\/\//, "") + '</a>…';
